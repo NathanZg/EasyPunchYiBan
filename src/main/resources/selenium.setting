@@ -1,0 +1,4 @@
+#\u9A71\u52A8\u4F4D\u7F6E
+driverPath=/usr/bin/chromedriver
+#\u6D4F\u89C8\u5668\u5B89\u88C5\u4F4D\u7F6E
+browserLocation=/usr/bin/google-chrome-stable
