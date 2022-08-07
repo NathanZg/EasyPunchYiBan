@@ -100,3 +100,8 @@
 - 2022.8.6 
 
   > 1. Realize timing punch function and email report
+  
+- 2022.8.7
+
+  > 1. Fixed the situation where the check-in status could not be recorded
+  > 2. Optimize page load wait for poor network conditions
