@@ -105,3 +105,8 @@
 
   > 1. Fixed the situation where the check-in status could not be recorded
   > 2. Optimize page load wait for poor network conditions
+  
+- 2022.8.8
+
+  > 1. Fix error notification
+  > 2. Extend the waiting time for the lunch check page

@@ -161,7 +161,7 @@ public class Punch {
             log.info("将为" + userList.size() + "名用户进行午检打卡......");
             userList.forEach(user -> {
                 WebDriver driver = PunchUtils.initAndSetUserInfo(user);
-                WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20), Duration.ofSeconds(1));
+                WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30), Duration.ofSeconds(1));
                 if (!StrUtil.isEmpty(user.getSessionUrl())) {
                     driver.get(EncryptUtils.decode(user.getSessionUrl()));
                 } else {
@@ -249,9 +249,9 @@ public class Punch {
                                     } catch (Exception exc) {
                                         driver.quit();
                                         if (user.getIfSendEmail() == 1) {
-                                            EmailUtils.sendMessage(user, "午检打卡失败，未知原因导致晨检打卡失败!");
+                                            EmailUtils.sendMessage(user, "午检打卡失败，未知原因导致午检打卡失败!");
                                         }
-                                        log.error("[" + user.getPhone() + "] {未知原因导致晨检打卡失败!}");
+                                        log.error("[" + user.getPhone() + "] {未知原因导致午检打卡失败!}");
                                         return;
                                     }
                                 }
