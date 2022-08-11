@@ -110,3 +110,8 @@
 
   > 1. Fix error notification
   > 2. Extend the waiting time for the lunch check page
+  
+- 2022.8.11
+
+  > 1.Fixed the problem that the chrome and chromedriver processes were not closed after performing the punch-in, which     	caused the memory usage and CPU usage to increase, resulting in a freeze
+  > 2.Added verification code identification error report rebate function

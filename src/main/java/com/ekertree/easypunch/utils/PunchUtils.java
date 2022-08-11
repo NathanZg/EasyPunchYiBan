@@ -1,8 +1,6 @@
 package com.ekertree.easypunch.utils;
 
-import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.extra.mail.MailUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONObject;
@@ -14,7 +12,6 @@ import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -49,6 +46,8 @@ public class PunchUtils {
     public static String P = "/html/body/div[2]/p[1]";
     public static String VALIDATION_CODE_BUTTON_XPATH = "/html/body/div[2]/div/a";
     public static String PARSE_CODE_IMG_URL = "http://upload.chaojiying.net/Upload/Processing.php";
+    public static String REPORT_CODE_ERROR_URL = "http://upload.chaojiying.net/Upload/ReportError.php";
+    public static String PIC_ID;
 
     static {
         Setting ocrSetting = new Setting("ocr.setting");
@@ -87,9 +86,8 @@ public class PunchUtils {
         //无窗口模式
         options.addArguments("--headless");
         //窗口大小
-        options.addArguments("window-size=1024,768");
+        options.addArguments("--start-maximized");
 
-        options.addArguments("'--user-data-dir=~/.config/google-chrome'");
         //linux要设置远程调试端口 不设置会报错！
         options.addArguments("--remote-debugging-port=9222");
 
@@ -143,9 +141,8 @@ public class PunchUtils {
         //无窗口模式
         options.addArguments("--headless");
         //窗口大小
-        options.addArguments("window-size=1024,768");
+        options.addArguments("--start-maximized");
 
-        options.addArguments("'--user-data-dir=~/.config/google-chrome'");
         //linux要设置远程调试端口 不设置会报错！
         options.addArguments("--remote-debugging-port=9222");
 
@@ -220,11 +217,22 @@ public class PunchUtils {
         HttpResponse response = HttpRequest.post(PARSE_CODE_IMG_URL).form(params).execute();
         JSONObject responseJson = JSONUtil.parseObj(response.body());
         Integer err_no = (Integer) responseJson.get("err_no");
+        PIC_ID = (String) responseJson.get("pic_id");
         if (err_no == 0) {
             return (String) responseJson.get("pic_str");
         }else{
+            ReportCodeError();
             return "";
         }
+    }
+
+    public static void ReportCodeError() {
+        HashMap<String, Object> params = new HashMap<>();
+        params.put("user", OCR_USER);
+        params.put("pass2", OCR_PASS2);
+        params.put("softid", OCR_SOFT_ID);
+        params.put("id", PIC_ID);
+        HttpRequest.post(REPORT_CODE_ERROR_URL).form(params).execute();
     }
 
     //获得验证码输入框

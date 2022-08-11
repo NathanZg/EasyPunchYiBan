@@ -9,6 +9,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 
@@ -30,124 +31,117 @@ public class Punch {
         if (userList.size() > 0) {
             log.info("将为" + userList.size() + "名用户进行晨检打卡......");
             userList.forEach(user -> {
-                WebDriver driver = PunchUtils.initAndSetUserInfo(user);
-                WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20), Duration.ofSeconds(1));
-                if (!StrUtil.isEmpty(user.getSessionUrl())) {
-                    driver.get(EncryptUtils.decode(user.getSessionUrl()));
-                } else {
-                    driver.quit();
-                    if (user.getIfSendEmail() == 1) {
-                        EmailUtils.sendMessage(user, "晨检打卡失败，原因是session_url为空，请进行更新！");
-                    }
-                    log.error("[" + user.getPhone() + "] {session_url为空！}");
-                    return;
-                }
+                WebDriver driver = null;
                 try {
-                    wait.until(dr -> dr.findElement(By.xpath(PunchUtils.MORNING_PUNCH_BUTTON_XPATH))).click();
+                    driver = PunchUtils.initAndSetUserInfo(user);
+                    WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20), Duration.ofSeconds(1));
+                    if (!StrUtil.isEmpty(user.getSessionUrl())) {
+                        driver.get(EncryptUtils.decode(user.getSessionUrl()));
+                    } else {
+                        if (user.getIfSendEmail() == 1) {
+                            EmailUtils.sendMessage(user, "晨检打卡失败，原因是session_url为空，请进行更新！");
+                        }
+                        log.error("[" + user.getPhone() + "] {session_url为空！}");
+                        return;
+                    }
                     try {
-                        WebElement P = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
-                        if (P.getText().contains("提交成功")) {
-                            if (user.getIfSendEmail() == 1) {
-                                PunchUtils.screenShotAndSendEmail(driver, user, PunchType.MORNING);
+                        wait.until(dr -> dr.findElement(By.xpath(PunchUtils.MORNING_PUNCH_BUTTON_XPATH))).click();
+                        try {
+                            WebElement P = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
+                            if (P.getText().contains("提交成功")) {
+                                if (user.getIfSendEmail() == 1) {
+                                    PunchUtils.screenShotAndSendEmail(driver, user, PunchType.MORNING);
+                                }
+                                user.setMorning(1);
+                                UserService.updateById(user);
+                                log.info("[" + user.getPhone() + "] {晨检打卡成功！}");
+                            } else if (P.getText().contains("时间不正确")) {
+                                if (user.getIfSendEmail() == 1) {
+                                    EmailUtils.sendMessage(user, "晨检打卡失败,原因是未到打卡时间。");
+                                }
+                                log.error("[" + user.getPhone() + "]{晨检打卡失败,原因是未到打卡时间。}");
                             }
-                            driver.quit();
-                            user.setMorning(1);
-                            UserService.updateById(user);
-                            log.info("[" + user.getPhone() + "] {晨检打卡成功！}");
-                            return;
-                        } else if (P.getText().contains("时间不正确")) {
-                            driver.quit();
-                            if (user.getIfSendEmail() == 1) {
-                                EmailUtils.sendMessage(user, "晨检打卡失败,原因是未到打卡时间。");
+                        } catch (Exception e) {
+                            try {
+                                wait.until(dr -> dr.findElement(By.id(PunchUtils.CODE_IMG_ID)));
+                                PunchUtils.removePositioning(driver);
+                                PunchUtils.removeReadonly(driver, PunchType.MORNING);
+                                WebElement templateInput = PunchUtils.findElementById(driver, PunchUtils.MORNING_INPUT_IDS[0]);
+                                templateInput.sendKeys("36.3");
+                                WebElement locationInput = PunchUtils.findElementById(driver, PunchUtils.MORNING_INPUT_IDS[1]);
+                                locationInput.sendKeys(user.getAddress());
+                                WebElement isInDormitory = PunchUtils.findElementById(driver, PunchUtils.MORNING_INPUT_IDS[2]);
+                                isInDormitory.sendKeys("是");
+                                WebElement isGetSymptoms = PunchUtils.findElementById(driver, PunchUtils.MORNING_INPUT_IDS[3]);
+                                isGetSymptoms.sendKeys("否");
+                                WebElement codeInput = PunchUtils.getCodeInput(driver);
+                                codeInput.sendKeys(PunchUtils.parseCodeImg(driver));
+                                PunchUtils.agree(driver);
+                                String code = PunchUtils.parseCodeImg(driver);
+                                if (!StrUtil.isEmpty(code)) {
+                                    codeInput.sendKeys(code);
+                                    WebElement confirmButton = PunchUtils.getConfirmButton(driver);
+                                    confirmButton.click();
+                                    WebElement P = null;
+                                    try {
+                                        P = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
+                                        if (P.getText().contains("提交成功")) {
+                                            if (user.getIfSendEmail() == 1) {
+                                                PunchUtils.screenShotAndSendEmail(driver, user, PunchType.MORNING);
+                                            }
+                                            user.setMorning(1);
+                                            UserService.updateById(user);
+                                            log.info("[" + user.getPhone() + "] {晨检打卡成功!}");
+                                        } else if (P.getText().contains("时间不正确")) {
+                                            if (user.getIfSendEmail() == 1) {
+                                                EmailUtils.sendMessage(user, "晨检打卡失败，原因是提交后刚好到截至时间。");
+                                            }
+                                            log.error("[" + user.getPhone() + "] {晨检打卡失败，原因是提交后刚好到截至时间。}");
+                                        }
+                                    } catch (Exception ex) {
+                                        try {
+                                            driver.findElement(By.id(PunchUtils.CODE_INPUT_ID));
+                                            PunchUtils.ReportCodeError();
+                                            if (user.getIfSendEmail() == 1) {
+                                                EmailUtils.sendMessage(user, "晨检打卡失败，原因是验证码识别错误!");
+                                            }
+                                            log.error("[" + user.getPhone() + "] {验证码识别错误!}");
+                                        } catch (Exception exc) {
+                                            if (user.getIfSendEmail() == 1) {
+                                                EmailUtils.sendMessage(user, "晨检打卡失败，未知原因导致晨检打卡失败!");
+                                            }
+                                            log.error("[" + user.getPhone() + "] {未知原因导致晨检打卡失败!}");
+                                        }
+                                    }
+                                } else {
+                                    if (user.getIfSendEmail() == 1) {
+                                        EmailUtils.sendMessage(user, "晨检打卡失败，原因是验证码解析失败！");
+                                    }
+                                    log.error("[" + user.getPhone() + "] {验证码解析失败!}");
+                                }
+                            } catch (Exception ex) {
+                                if (user.getIfSendEmail() == 1) {
+                                    EmailUtils.sendMessage(user, "晨检打卡失败，原因是表单页面加载失败！");
+                                }
+                                log.info("晨检打卡失败，原因是表单页面加载失败！");
                             }
-                            log.error("[" + user.getPhone() + "]{晨检打卡失败,原因是未到打卡时间。}");
-                            return;
                         }
                     } catch (Exception e) {
-                        try {
-                            wait.until(dr -> dr.findElement(By.id(PunchUtils.CODE_IMG_ID)));
-                            PunchUtils.removePositioning(driver);
-                            driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(1));
-                            PunchUtils.removeReadonly(driver, PunchType.MORNING);
-                            driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(1));
-                            WebElement templateInput = PunchUtils.findElementById(driver, PunchUtils.MORNING_INPUT_IDS[0]);
-                            templateInput.sendKeys("36.3");
-                            WebElement locationInput = PunchUtils.findElementById(driver, PunchUtils.MORNING_INPUT_IDS[1]);
-                            locationInput.sendKeys(user.getAddress());
-                            WebElement isInDormitory = PunchUtils.findElementById(driver, PunchUtils.MORNING_INPUT_IDS[2]);
-                            isInDormitory.sendKeys("是");
-                            WebElement isGetSymptoms = PunchUtils.findElementById(driver, PunchUtils.MORNING_INPUT_IDS[3]);
-                            isGetSymptoms.sendKeys("否");
-                            WebElement codeInput = PunchUtils.getCodeInput(driver);
-                            codeInput.sendKeys(PunchUtils.parseCodeImg(driver));
-                            PunchUtils.agree(driver);
-                            driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(1));
-                            String code = PunchUtils.parseCodeImg(driver);
-                            if (!StrUtil.isEmpty(code)) {
-                                codeInput.sendKeys(code);
-                                WebElement confirmButton = PunchUtils.getConfirmButton(driver);
-                                confirmButton.click();
-                                WebElement P = null;
-                                try {
-                                    P = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
-                                    if (P.getText().contains("提交成功")) {
-                                        if (user.getIfSendEmail() == 1) {
-                                            PunchUtils.screenShotAndSendEmail(driver, user, PunchType.MORNING);
-                                        }
-                                        driver.quit();
-                                        user.setMorning(1);
-                                        UserService.updateById(user);
-                                        log.info("[" + user.getPhone() + "] {晨检打卡成功!}");
-                                        return;
-                                    } else if (P.getText().contains("时间不正确")) {
-                                        driver.quit();
-                                        if (user.getIfSendEmail() == 1) {
-                                            EmailUtils.sendMessage(user, "晨检打卡失败，原因是提交后刚好到截至时间。");
-                                        }
-                                        log.error("[" + user.getPhone() + "] {晨检打卡失败，原因是提交后刚好到截至时间。}");
-                                        return;
-                                    }
-                                } catch (Exception ex) {
-                                    try {
-                                        driver.findElement(By.id(PunchUtils.CODE_INPUT_ID));
-                                        driver.quit();
-                                        if (user.getIfSendEmail() == 1) {
-                                            EmailUtils.sendMessage(user, "晨检打卡失败，原因是验证码识别错误!");
-                                        }
-                                        log.error("[" + user.getPhone() + "] {验证码识别错误!}");
-                                        return;
-                                    } catch (Exception exc) {
-                                        driver.quit();
-                                        if (user.getIfSendEmail() == 1) {
-                                            EmailUtils.sendMessage(user, "晨检打卡失败，未知原因导致晨检打卡失败!");
-                                        }
-                                        log.error("[" + user.getPhone() + "] {未知原因导致晨检打卡失败!}");
-                                        return;
-                                    }
-                                }
-                            } else {
-                                driver.quit();
-                                if (user.getIfSendEmail() == 1) {
-                                    EmailUtils.sendMessage(user, "晨检打卡失败，原因是验证码解析失败！");
-                                }
-                                log.error("[" + user.getPhone() + "] {验证码解析失败!}");
-                                return;
-                            }
-                        } catch (Exception ex) {
-                            driver.quit();
-                            if (user.getIfSendEmail() == 1) {
-                                EmailUtils.sendMessage(user, "晨检打卡失败，原因是表单页面加载失败！");
-                            }
-                            log.info("晨检打卡失败，原因是表单页面加载失败！");
+                        if (user.getIfSendEmail() == 1) {
+                            EmailUtils.sendMessage(user, "晨检打卡失败，原因是session_url失效或者页面加载失败!");
                         }
+                        log.error("[" + user.getPhone() + "] {session_url失效或者页面加载失败!}");
                     }
                 } catch (Exception e) {
+                    log.error(e.getMessage());
+                }finally {
                     driver.quit();
-                    if (user.getIfSendEmail() == 1) {
-                        EmailUtils.sendMessage(user, "晨检打卡失败，原因是session_url失效或者页面加载失败!");
+                    try {
+                        Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chrome|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
+                        Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chromedriver|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
+                    } catch (IOException e) {
+                        log.error(e.getMessage());
                     }
-                    log.error("[" + user.getPhone() + "] {session_url失效或者页面加载失败!}");
-                    return;
                 }
             });
         }
@@ -160,124 +154,116 @@ public class Punch {
         if (userList.size() > 0) {
             log.info("将为" + userList.size() + "名用户进行午检打卡......");
             userList.forEach(user -> {
-                WebDriver driver = PunchUtils.initAndSetUserInfo(user);
-                WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30), Duration.ofSeconds(1));
-                if (!StrUtil.isEmpty(user.getSessionUrl())) {
-                    driver.get(EncryptUtils.decode(user.getSessionUrl()));
-                } else {
-                    driver.quit();
-                    if (user.getIfSendEmail() == 1) {
-                        EmailUtils.sendMessage(user, "午检打卡失败，原因是session_url为空，请进行更新！");
-                    }
-                    log.error("[" + user.getPhone() + "] {session_url为空！}");
-                    return;
-                }
+                WebDriver driver = null;
                 try {
-                    wait.until(dr -> dr.findElement(By.xpath(PunchUtils.NOON_PUNCH_BUTTON_XPATH))).click();
+                    driver = PunchUtils.initAndSetUserInfo(user);
+                    WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30), Duration.ofSeconds(1));
+                    if (!StrUtil.isEmpty(user.getSessionUrl())) {
+                        driver.get(EncryptUtils.decode(user.getSessionUrl()));
+                    } else {
+                        if (user.getIfSendEmail() == 1) {
+                            EmailUtils.sendMessage(user, "午检打卡失败，原因是session_url为空，请进行更新！");
+                        }
+                        log.error("[" + user.getPhone() + "] {session_url为空！}");
+                        return;
+                    }
                     try {
-                        WebElement P = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
-                        if (P.getText().contains("提交成功")) {
-                            if (user.getIfSendEmail() == 1) {
-                                PunchUtils.screenShotAndSendEmail(driver, user, PunchType.NOON);
+                        wait.until(dr -> dr.findElement(By.xpath(PunchUtils.NOON_PUNCH_BUTTON_XPATH))).click();
+                        try {
+                            WebElement P = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
+                            if (P.getText().contains("提交成功")) {
+                                if (user.getIfSendEmail() == 1) {
+                                    PunchUtils.screenShotAndSendEmail(driver, user, PunchType.NOON);
+                                }
+                                user.setNoon(1);
+                                UserService.updateById(user);
+                                log.info("[" + user.getPhone() + "] {午检打卡成功！}");
+                            } else if (P.getText().contains("时间不正确")) {
+                                if (user.getIfSendEmail() == 1) {
+                                    EmailUtils.sendMessage(user, "午检打卡失败,原因是未到打卡时间。");
+                                }
+                                log.error("[" + user.getPhone() + "]{午检打卡失败,原因是未到打卡时间。}");
                             }
-                            driver.quit();
-                            user.setNoon(1);
-                            UserService.updateById(user);
-                            log.info("[" + user.getPhone() + "] {午检打卡成功！}");
-                            return;
-                        } else if (P.getText().contains("时间不正确")) {
-                            driver.quit();
-                            if (user.getIfSendEmail() == 1) {
-                                EmailUtils.sendMessage(user, "午检打卡失败,原因是未到打卡时间。");
+                        } catch (Exception e) {
+                            try {
+                                wait.until(dr -> dr.findElement(By.id(PunchUtils.CODE_IMG_ID)));
+                                PunchUtils.removePositioning(driver);
+                                PunchUtils.removeReadonly(driver, PunchType.NOON);
+                                WebElement templateInput = PunchUtils.findElementById(driver, PunchUtils.NOON_INPUT_IDS[0]);
+                                templateInput.sendKeys("36.3");
+                                WebElement locationInput = PunchUtils.findElementById(driver, PunchUtils.NOON_INPUT_IDS[1]);
+                                locationInput.sendKeys(user.getAddress());
+                                WebElement isInDormitory = PunchUtils.findElementById(driver, PunchUtils.NOON_INPUT_IDS[2]);
+                                isInDormitory.sendKeys("是");
+                                WebElement isGetSymptoms = PunchUtils.findElementById(driver, PunchUtils.NOON_INPUT_IDS[3]);
+                                isGetSymptoms.sendKeys("否");
+                                WebElement codeInput = PunchUtils.getCodeInput(driver);
+                                codeInput.sendKeys(PunchUtils.parseCodeImg(driver));
+                                PunchUtils.agree(driver);
+                                String code = PunchUtils.parseCodeImg(driver);
+                                if (!StrUtil.isEmpty(code)) {
+                                    codeInput.sendKeys(code);
+                                    WebElement confirmButton = PunchUtils.getConfirmButton(driver);
+                                    confirmButton.click();
+                                    WebElement P = null;
+                                    try {
+                                        P = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
+                                        if (P.getText().contains("提交成功")) {
+                                            if (user.getIfSendEmail() == 1) {
+                                                PunchUtils.screenShotAndSendEmail(driver, user, PunchType.NOON);
+                                            }
+                                            user.setNoon(1);
+                                            UserService.updateById(user);
+                                            log.info("[" + user.getPhone() + "] {午检打卡成功!}");
+                                        } else if (P.getText().contains("时间不正确")) {
+                                            if (user.getIfSendEmail() == 1) {
+                                                EmailUtils.sendMessage(user, "午检打卡失败，原因是提交后刚好到截至时间。");
+                                            }
+                                            log.error("[" + user.getPhone() + "] {午检打卡失败，原因是提交后刚好到截至时间。}");
+                                        }
+                                    } catch (Exception ex) {
+                                        try {
+                                            driver.findElement(By.id(PunchUtils.CODE_INPUT_ID));
+                                            if (user.getIfSendEmail() == 1) {
+                                                EmailUtils.sendMessage(user, "午检打卡失败，原因是验证码识别错误!");
+                                            }
+                                            log.error("[" + user.getPhone() + "] {验证码识别错误!}");
+                                        } catch (Exception exc) {
+                                            if (user.getIfSendEmail() == 1) {
+                                                EmailUtils.sendMessage(user, "午检打卡失败，未知原因导致午检打卡失败!");
+                                            }
+                                            log.error("[" + user.getPhone() + "] {未知原因导致午检打卡失败!}");
+                                        }
+                                    }
+                                } else {
+                                    if (user.getIfSendEmail() == 1) {
+                                        EmailUtils.sendMessage(user, "午检打卡失败，原因是验证码解析失败！");
+                                    }
+                                    log.error("[" + user.getPhone() + "] {验证码解析失败!}");
+                                }
+                            } catch (Exception ex) {
+                                if (user.getIfSendEmail() == 1) {
+                                    EmailUtils.sendMessage(user, "午检打卡失败，原因是表单页面加载失败！");
+                                }
+                                log.info("午检打卡失败，原因是表单页面加载失败！");
                             }
-                            log.error("[" + user.getPhone() + "]{午检打卡失败,原因是未到打卡时间。}");
-                            return;
                         }
                     } catch (Exception e) {
-                        try {
-                            wait.until(dr -> dr.findElement(By.id(PunchUtils.CODE_IMG_ID)));
-                            PunchUtils.removePositioning(driver);
-                            driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(1));
-                            PunchUtils.removeReadonly(driver, PunchType.NOON);
-                            driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(1));
-                            WebElement templateInput = PunchUtils.findElementById(driver, PunchUtils.NOON_INPUT_IDS[0]);
-                            templateInput.sendKeys("36.3");
-                            WebElement locationInput = PunchUtils.findElementById(driver, PunchUtils.NOON_INPUT_IDS[1]);
-                            locationInput.sendKeys(user.getAddress());
-                            WebElement isInDormitory = PunchUtils.findElementById(driver, PunchUtils.NOON_INPUT_IDS[2]);
-                            isInDormitory.sendKeys("是");
-                            WebElement isGetSymptoms = PunchUtils.findElementById(driver, PunchUtils.NOON_INPUT_IDS[3]);
-                            isGetSymptoms.sendKeys("否");
-                            WebElement codeInput = PunchUtils.getCodeInput(driver);
-                            codeInput.sendKeys(PunchUtils.parseCodeImg(driver));
-                            PunchUtils.agree(driver);
-                            driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(1));
-                            String code = PunchUtils.parseCodeImg(driver);
-                            if (!StrUtil.isEmpty(code)) {
-                                codeInput.sendKeys(code);
-                                WebElement confirmButton = PunchUtils.getConfirmButton(driver);
-                                confirmButton.click();
-                                WebElement P = null;
-                                try {
-                                    P = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
-                                    if (P.getText().contains("提交成功")) {
-                                        if (user.getIfSendEmail() == 1) {
-                                            PunchUtils.screenShotAndSendEmail(driver, user, PunchType.NOON);
-                                        }
-                                        driver.quit();
-                                        user.setNoon(1);
-                                        UserService.updateById(user);
-                                        log.info("[" + user.getPhone() + "] {午检打卡成功!}");
-                                        return;
-                                    } else if (P.getText().contains("时间不正确")) {
-                                        driver.quit();
-                                        if (user.getIfSendEmail() == 1) {
-                                            EmailUtils.sendMessage(user, "午检打卡失败，原因是提交后刚好到截至时间。");
-                                        }
-                                        log.error("[" + user.getPhone() + "] {午检打卡失败，原因是提交后刚好到截至时间。}");
-                                        return;
-                                    }
-                                } catch (Exception ex) {
-                                    try {
-                                        driver.findElement(By.id(PunchUtils.CODE_INPUT_ID));
-                                        driver.quit();
-                                        if (user.getIfSendEmail() == 1) {
-                                            EmailUtils.sendMessage(user, "午检打卡失败，原因是验证码识别错误!");
-                                        }
-                                        log.error("[" + user.getPhone() + "] {验证码识别错误!}");
-                                        return;
-                                    } catch (Exception exc) {
-                                        driver.quit();
-                                        if (user.getIfSendEmail() == 1) {
-                                            EmailUtils.sendMessage(user, "午检打卡失败，未知原因导致午检打卡失败!");
-                                        }
-                                        log.error("[" + user.getPhone() + "] {未知原因导致午检打卡失败!}");
-                                        return;
-                                    }
-                                }
-                            } else {
-                                driver.quit();
-                                if (user.getIfSendEmail() == 1) {
-                                    EmailUtils.sendMessage(user, "午检打卡失败，原因是验证码解析失败！");
-                                }
-                                log.error("[" + user.getPhone() + "] {验证码解析失败!}");
-                                return;
-                            }
-                        } catch (Exception ex) {
-                            driver.quit();
-                            if (user.getIfSendEmail() == 1) {
-                                EmailUtils.sendMessage(user, "午检打卡失败，原因是表单页面加载失败！");
-                            }
-                            log.info("午检打卡失败，原因是表单页面加载失败！");
+                        if (user.getIfSendEmail() == 1) {
+                            EmailUtils.sendMessage(user, "午检打卡失败，原因是session_url失效或者页面加载失败!");
                         }
+                        log.error("[" + user.getPhone() + "] {session_url失效或者页面加载失败!}");
                     }
                 } catch (Exception e) {
+                   log.error(e.getMessage());
+                }finally {
                     driver.quit();
-                    if (user.getIfSendEmail() == 1) {
-                        EmailUtils.sendMessage(user, "午检打卡失败，原因是session_url失效或者页面加载失败!");
+                    try {
+                        Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chrome|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
+                        Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chromedriver|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
+                    } catch (IOException e) {
+                        log.error(e.getMessage());
                     }
-                    log.error("[" + user.getPhone() + "] {session_url失效或者页面加载失败!}");
-                    return;
                 }
             });
         }
@@ -336,17 +322,24 @@ public class Punch {
                 }
             });
             driver.quit();
+            try {
+                Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chrome|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
+                Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chromedriver|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
+            } catch (IOException e) {
+                log.error(e.getMessage());
+            }
         }
         log.info("定时任务【更新SessionUrl】执行完毕......");
     }
 
     public void updateUserSessionUrl(User user) {
-        log.info("将为用户" + user.getPhone() + "更新sessionUrl......");
-        WebDriver driver = PunchUtils.init();
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20), Duration.ofSeconds(1));
-        driver.manage().deleteAllCookies();
-        driver.get(PunchUtils.YI_BANG_TONG_URL);
+        WebDriver driver = null;
         try {
+            log.info("将为用户" + user.getPhone() + "更新sessionUrl......");
+            driver = PunchUtils.init();
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20), Duration.ofSeconds(1));
+            driver.manage().deleteAllCookies();
+            driver.get(PunchUtils.YI_BANG_TONG_URL);
             wait.until(dr -> dr.findElement(By.xpath(PunchUtils.LOGIN_BUTTON_XPATH)));
             WebElement loginPhoneInput = PunchUtils.getLoginPhoneInput(driver);
             loginPhoneInput.sendKeys(user.getPhone());
@@ -386,6 +379,14 @@ public class Punch {
             }
             log.info("更新sessionUrl失败，原因是登陆页面加载失败！");
             return;
+        }finally {
+            driver.quit();
+            try {
+                Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chrome|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
+                Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chromedriver|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
+            } catch (IOException e) {
+                log.error(e.getMessage());
+            }
         }
     }
 
