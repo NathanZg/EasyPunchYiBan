@@ -85,14 +85,11 @@ public class PunchUtils {
         options.addArguments("--disable-dev-shm-usage");
         //无窗口模式
         options.addArguments("--headless");
-        //窗口大小
-        options.addArguments("--start-maximized");
 
         //linux要设置远程调试端口 不设置会报错！
-        options.addArguments("--remote-debugging-port=9222");
+        options.addArguments("--remote-debugging-port=9230");
 
-
-        WebDriver chrome = new ChromeDriver(options);
+        ChromeDriver chrome = new ChromeDriver(options);
 
         return chrome;
     }
@@ -140,13 +137,11 @@ public class PunchUtils {
         options.addArguments("--disable-dev-shm-usage");
         //无窗口模式
         options.addArguments("--headless");
-        //窗口大小
-        options.addArguments("--start-maximized");
 
         //linux要设置远程调试端口 不设置会报错！
-        options.addArguments("--remote-debugging-port=9222");
+        options.addArguments("--remote-debugging-port=9230");
 
-        WebDriver chrome = new ChromeDriver(options);
+        ChromeDriver chrome = new ChromeDriver(options);
 
         return chrome;
     }

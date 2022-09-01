@@ -25,16 +25,26 @@ import java.util.List;
 @Slf4j
 public class Punch {
 
+    public void clearProcess() {
+        try {
+            Runtime.getRuntime().exec("sudo kill -9 $(ps --ppid 1 | grep 'chromedriver' | awk \"{ print \\$1 }\") 2>/dev/null");
+            Runtime.getRuntime().exec("sudo kill -9 $(ps --ppid 1 | grep 'chrome' | awk \"{ print \\$1 }\") 2>/dev/null");
+        } catch (IOException e) {
+            log.error(e.getMessage());
+        }
+    }
+
     public void doMorningPunch() {
+        clearProcess();
         log.info("定时任务【晨检打卡】开始执行......");
         List<User> userList = UserService.getMorningPunchUserList();
         if (userList.size() > 0) {
             log.info("将为" + userList.size() + "名用户进行晨检打卡......");
-            userList.forEach(user -> {
+            for (User user : userList) {
                 WebDriver driver = null;
                 try {
                     driver = PunchUtils.initAndSetUserInfo(user);
-                    WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20), Duration.ofSeconds(1));
+                    WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30), Duration.ofSeconds(1));
                     if (!StrUtil.isEmpty(user.getSessionUrl())) {
                         driver.get(EncryptUtils.decode(user.getSessionUrl()));
                     } else {
@@ -99,6 +109,7 @@ public class Punch {
                                             log.error("[" + user.getPhone() + "] {晨检打卡失败，原因是提交后刚好到截至时间。}");
                                         }
                                     } catch (Exception ex) {
+                                        log.error(ex.getMessage());
                                         try {
                                             driver.findElement(By.id(PunchUtils.CODE_INPUT_ID));
                                             PunchUtils.ReportCodeError();
@@ -107,10 +118,30 @@ public class Punch {
                                             }
                                             log.error("[" + user.getPhone() + "] {验证码识别错误!}");
                                         } catch (Exception exc) {
-                                            if (user.getIfSendEmail() == 1) {
-                                                EmailUtils.sendMessage(user, "晨检打卡失败，未知原因导致晨检打卡失败!");
+                                            try {
+                                                driver.get(EncryptUtils.decode(user.getSessionUrl()));
+                                                wait.until(dr -> dr.findElement(By.xpath(PunchUtils.MORNING_PUNCH_BUTTON_XPATH))).click();
+                                                WebElement P1 = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
+                                                if (P1.getText().contains("提交成功")) {
+                                                    if (user.getIfSendEmail() == 1) {
+                                                        PunchUtils.screenShotAndSendEmail(driver, user, PunchType.MORNING);
+                                                    }
+                                                    user.setMorning(1);
+                                                    UserService.updateById(user);
+                                                    log.info("[" + user.getPhone() + "] {晨检打卡成功！}");
+                                                } else if (P1.getText().contains("时间不正确")) {
+                                                    if (user.getIfSendEmail() == 1) {
+                                                        EmailUtils.sendMessage(user, "晨检打卡失败,原因是打卡时间已过。");
+                                                    }
+                                                    log.error("[" + user.getPhone() + "]{晨检打卡失败,原因是打卡时间已过。}");
+                                                }
+                                            } catch (Exception exception) {
+                                                if (user.getIfSendEmail() == 1) {
+                                                    EmailUtils.sendMessage(user, "已成功执行打卡操作，由于网络较差无法检测是否打卡成功！");
+                                                }
+                                                log.error("[" + user.getPhone() + "] {已成功执行打卡操作，由于网络较差无法检测是否打卡成功！}");
+                                                log.error(exception.getMessage());
                                             }
-                                            log.error("[" + user.getPhone() + "] {未知原因导致晨检打卡失败!}");
                                         }
                                     }
                                 } else {
@@ -123,7 +154,8 @@ public class Punch {
                                 if (user.getIfSendEmail() == 1) {
                                     EmailUtils.sendMessage(user, "晨检打卡失败，原因是表单页面加载失败！");
                                 }
-                                log.info("晨检打卡失败，原因是表单页面加载失败！");
+                                log.error("晨检打卡失败，原因是表单页面加载失败！");
+                                log.error(ex.getMessage());
                             }
                         }
                     } catch (Exception e) {
@@ -131,33 +163,30 @@ public class Punch {
                             EmailUtils.sendMessage(user, "晨检打卡失败，原因是session_url失效或者页面加载失败!");
                         }
                         log.error("[" + user.getPhone() + "] {session_url失效或者页面加载失败!}");
+                        log.error(e.getMessage());
                     }
                 } catch (Exception e) {
                     log.error(e.getMessage());
                 }finally {
                     driver.quit();
-                    try {
-                        Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chrome|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
-                        Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chromedriver|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
-                    } catch (IOException e) {
-                        log.error(e.getMessage());
-                    }
+                    clearProcess();
                 }
-            });
+            }
         }
         log.info("定时任务【晨检打卡】执行完毕......");
     }
 
     public void doNoonPunch() {
+        clearProcess();
         log.info("定时任务【午检打卡】开始执行......");
         List<User> userList = UserService.getNoonPunchUserList();
         if (userList.size() > 0) {
             log.info("将为" + userList.size() + "名用户进行午检打卡......");
-            userList.forEach(user -> {
+            for (User user : userList) {
                 WebDriver driver = null;
                 try {
                     driver = PunchUtils.initAndSetUserInfo(user);
-                    WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30), Duration.ofSeconds(1));
+                    WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(60), Duration.ofSeconds(1));
                     if (!StrUtil.isEmpty(user.getSessionUrl())) {
                         driver.get(EncryptUtils.decode(user.getSessionUrl()));
                     } else {
@@ -222,6 +251,7 @@ public class Punch {
                                             log.error("[" + user.getPhone() + "] {午检打卡失败，原因是提交后刚好到截至时间。}");
                                         }
                                     } catch (Exception ex) {
+                                        log.error(ex.getMessage());
                                         try {
                                             driver.findElement(By.id(PunchUtils.CODE_INPUT_ID));
                                             if (user.getIfSendEmail() == 1) {
@@ -229,10 +259,30 @@ public class Punch {
                                             }
                                             log.error("[" + user.getPhone() + "] {验证码识别错误!}");
                                         } catch (Exception exc) {
-                                            if (user.getIfSendEmail() == 1) {
-                                                EmailUtils.sendMessage(user, "午检打卡失败，未知原因导致午检打卡失败!");
+                                            try {
+                                                driver.get(EncryptUtils.decode(user.getSessionUrl()));
+                                                wait.until(dr -> dr.findElement(By.xpath(PunchUtils.NOON_PUNCH_BUTTON_XPATH))).click();
+                                                WebElement P1 = wait.until(dr -> dr.findElement(By.xpath(PunchUtils.P)));
+                                                if (P1.getText().contains("提交成功")) {
+                                                    if (user.getIfSendEmail() == 1) {
+                                                        PunchUtils.screenShotAndSendEmail(driver, user, PunchType.NOON);
+                                                    }
+                                                    user.setNoon(1);
+                                                    UserService.updateById(user);
+                                                    log.info("[" + user.getPhone() + "] {午检打卡成功！}");
+                                                } else if (P1.getText().contains("时间不正确")) {
+                                                    if (user.getIfSendEmail() == 1) {
+                                                        EmailUtils.sendMessage(user, "午检打卡失败,原因是打卡时间已过。");
+                                                    }
+                                                    log.error("[" + user.getPhone() + "]{午检打卡失败,原因是打卡时间已过。}");
+                                                }
+                                            } catch (Exception exception) {
+                                                if (user.getIfSendEmail() == 1) {
+                                                    EmailUtils.sendMessage(user, "已成功执行午检打卡操作，由于网络较差无法检测是否打卡成功！");
+                                                }
+                                                log.error("[" + user.getPhone() + "] {已成功执行午检打卡操作，由于网络较差无法检测是否打卡成功！}");
+                                                log.error(exception.getMessage());
                                             }
-                                            log.error("[" + user.getPhone() + "] {未知原因导致午检打卡失败!}");
                                         }
                                     }
                                 } else {
@@ -245,7 +295,8 @@ public class Punch {
                                 if (user.getIfSendEmail() == 1) {
                                     EmailUtils.sendMessage(user, "午检打卡失败，原因是表单页面加载失败！");
                                 }
-                                log.info("午检打卡失败，原因是表单页面加载失败！");
+                                log.error("午检打卡失败，原因是表单页面加载失败！");
+                                log.error(ex.getMessage());
                             }
                         }
                     } catch (Exception e) {
@@ -253,31 +304,28 @@ public class Punch {
                             EmailUtils.sendMessage(user, "午检打卡失败，原因是session_url失效或者页面加载失败!");
                         }
                         log.error("[" + user.getPhone() + "] {session_url失效或者页面加载失败!}");
-                    }
-                } catch (Exception e) {
-                   log.error(e.getMessage());
-                }finally {
-                    driver.quit();
-                    try {
-                        Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chrome|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
-                        Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chromedriver|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
-                    } catch (IOException e) {
                         log.error(e.getMessage());
                     }
+                } catch (Exception e) {
+                    log.error(e.getMessage());
+                }finally {
+                    driver.quit();
+                    clearProcess();
                 }
-            });
+            }
         }
         log.info("定时任务【午检打卡】执行完毕......");
     }
 
     public void updatePunchUserListSessionUrl() {
+        clearProcess();
         log.info("定时任务【更新SessionUrl】开始执行......");
         List<User> userList = UserService.getPunchUserList();
         if (userList.size() > 0) {
             log.info("将为" + userList.size() + "名用户进行更新SessionUrl......");
             WebDriver driver = PunchUtils.init();
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20), Duration.ofSeconds(1));
-            userList.forEach(user -> {
+            for (User user : userList) {
                 driver.manage().deleteAllCookies();
                 driver.get(PunchUtils.YI_BANG_TONG_URL);
                 try {
@@ -298,41 +346,35 @@ public class Punch {
                                 EmailUtils.sendMessage(user, "sessionUrl更新成功！");
                             }
                             log.info("[" + user.getPhone() + "] {sessionUrl更新成功！}");
-                            return;
                         } else {
                             if (user.getIfSendEmail() == 1) {
                                 EmailUtils.sendMessage(user, "获取的sessionUrl为空，更新失败！");
                             }
                             log.error("[" + user.getPhone() + "] {获取的sessionUrl为空，更新失败！}");
-                            return;
                         }
                     } catch (Exception e) {
                         if (user.getIfSendEmail() == 1) {
                             EmailUtils.sendMessage(user, "未知原因加载打卡页面失败或存入数据库失败，更新sessionUrl失败！");
                         }
                         log.error("[" + user.getPhone() + "] {未知原因加载打卡页面失败或存入数据库失败，更新sessionUrl失败！}");
-                        return;
+                        log.error(e.getMessage());
                     }
                 } catch (Exception e) {
                     if (user.getIfSendEmail() == 1) {
                         EmailUtils.sendMessage(user, "更新sessionUrl失败，原因是登陆页面加载失败！");
                     }
-                    log.info("更新sessionUrl失败，原因是登陆页面加载失败！");
-                    return;
+                    log.error("更新sessionUrl失败，原因是登陆页面加载失败！");
+                    log.error(e.getMessage());
                 }
-            });
-            driver.quit();
-            try {
-                Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chrome|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
-                Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chromedriver|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
-            } catch (IOException e) {
-                log.error(e.getMessage());
             }
+            driver.quit();
+            clearProcess();
         }
         log.info("定时任务【更新SessionUrl】执行完毕......");
     }
 
     public void updateUserSessionUrl(User user) {
+        clearProcess();
         WebDriver driver = null;
         try {
             log.info("将为用户" + user.getPhone() + "更新sessionUrl......");
@@ -358,35 +400,28 @@ public class Punch {
                     }
                     log.info("[" + user.getPhone() + "] {sessionUrl更新成功！}");
                     log.info("为用户"+user.getPhone()+"更新sessionUrl执行完毕......");
-                    return;
                 } else {
                     if (user.getIfSendEmail() == 1) {
                         EmailUtils.sendMessage(user, "获取的sessionUrl为空，更新失败！");
                     }
                     log.error("[" + user.getPhone() + "] {获取的sessionUrl为空，更新失败！}");
-                    return;
                 }
             } catch (Exception e) {
                 if (user.getIfSendEmail() == 1) {
                     EmailUtils.sendMessage(user, "未知原因加载打卡页面失败或存入数据库失败，更新sessionUrl失败！");
                 }
                 log.error("[" + user.getPhone() + "] {未知原因加载打卡页面失败或存入数据库失败，更新sessionUrl失败！}");
-                return;
+                log.error(e.getMessage());
             }
         } catch (Exception e) {
             if (user.getIfSendEmail() == 1) {
                 EmailUtils.sendMessage(user, "更新sessionUrl失败，原因是登陆页面加载失败！");
             }
-            log.info("更新sessionUrl失败，原因是登陆页面加载失败！");
-            return;
+            log.error("更新sessionUrl失败，原因是登陆页面加载失败！");
+            log.error(e.getMessage());
         }finally {
             driver.quit();
-            try {
-                Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chrome|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
-                Runtime.getRuntime().exec("sudo kill -9 $(ps -ef|grep chromedriver|gawk '$0 !~/grep/ {print $2}' |tr -s '\\n' ' ')");
-            } catch (IOException e) {
-                log.error(e.getMessage());
-            }
+            clearProcess();
         }
     }
 
