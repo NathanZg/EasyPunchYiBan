@@ -115,3 +115,10 @@
 
   > 1. Fixed the problem that the chrome and chromedriver processes were not closed after performing the punch-in, which caused the memory usage and CPU usage to increase, resulting in a freeze
   > 2. Added verification code identification error report rebate function
+  
+- 2022.9.1
+
+  > 1. Modify the driver remote call port to 9230
+  > 2. More accurate judgment of punch page status
+  > 3. Modify the command to clear residual chrome and chromedriver processes
+  > 4. Improve stability
